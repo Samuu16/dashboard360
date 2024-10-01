@@ -45,11 +45,30 @@ from sqlalchemy import Table, Column, Integer, String, DateTime, Float, MetaData
 
 # Instantiate Flask application
 app = Flask(__name__)
+
+# Read environment variables
+server = os.getenv('SQL_SERVER')
+database = os.getenv('SQL_DATABASE')
+username = os.getenv('SQL_USER')
+password = os.getenv('SQL_PASSWORD')
+driver = os.getenv('SQL_DRIVER', 'ODBC Driver 18 for SQL Server')
+encrypt = os.getenv('SQL_ENCRYPT', 'yes')
+trust_cert = os.getenv('SQL_TRUST_SERVER_CERTIFICATE', 'no')
+timeout = os.getenv('SQL_CONNECTION_TIMEOUT', '30')
+
+# Print password partially for security
+
+# Construct the connection string
+params = urllib.parse.quote_plus("Driver={ODBC Driver 18 for SQL Server};Server=tcp:myserver212.database.windows.net,1433;Database=snehatrial;Uid=samiksha;Pwd=Sneha@12;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;")
+
+app.config['SQLALCHEMY_DATABASE_URI'] = f'mssql+pyodbc:///?odbc_connect={params}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
+# Print the constructed connection string for debugging purposes
+print(f"Connection String: {app.config['SQLALCHEMY_DATABASE_URI']}")
+
 db = SQLAlchemy(app)
-app.secret_key = 'secret_key'
+app.secret_key='secret_key'
 
 Base = declarative_base()
 # Define conversion table

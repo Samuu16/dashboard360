@@ -1260,18 +1260,20 @@ def get_account_counts():
 
 
 
+
 @app.route('/api/admin/<adminname>/sensor_data', methods=['GET', 'POST'])
 def add_sensor_data(adminname):
     try:
         user = User.query.filter_by(name=adminname).first()
         if not user:
+            api_logger.warning("Admin '%s' not found", adminname)
             return jsonify({"message": "Admin not found"}), 404
 
         table_name = f'level_sensor_data_{adminname}'
 
         # Check if the model exists in the dynamic_models dictionary
         if table_name not in dynamic_models:
-            print(f"Model for {table_name} not found. Attempting to create it.")  # Debugging line
+            api_logger.info("Model for %s not found. Attempting to create it.", table_name)
             create_sensor_data_table(table_name)
 
         DynamicLevelSensorData = dynamic_models[table_name]
@@ -1280,6 +1282,7 @@ def add_sensor_data(adminname):
             # Handling POST request to add sensor data
             data = request.json.get('level_sensor_data')
             if not data:
+                api_logger.warning("Invalid data received for admin: %s", adminname)
                 return jsonify({"message": "Invalid data"}), 400
 
             parsed_data = json.loads(data)
@@ -1302,6 +1305,8 @@ def add_sensor_data(adminname):
             db.session.add(sensor_data_entry)
             db.session.commit()
 
+            api_logger.info("Data stored successfully for admin: %s, data: %s", adminname, json.dumps(parsed_data))
+
             return jsonify({"message": f"Data added to {table_name}"}), 201
 
         elif request.method == 'GET':
@@ -1309,16 +1314,18 @@ def add_sensor_data(adminname):
             sensor_data = DynamicLevelSensorData.query.all()
 
             if not sensor_data:
+                api_logger.warning("No data found for admin: %s", adminname)
                 return jsonify({"message": "No data found"}), 404
 
             # Return date and volume_liters as a JSON response
             result = [{"date": entry.date, "volume_liters": entry.volume_liters} for entry in sensor_data]
+            api_logger.info("Data fetched successfully for admin: %s", adminname)
 
             return jsonify(result), 200
 
     except Exception as e:
+        api_logger.error("An error occurred for admin: %s, error: %s", adminname, str(e))
         return jsonify({"message": "An error occurred", "error": str(e)}), 500
-
 
 @app.route('/api/get_current_admin', methods=['GET'])
 def get_current_admin():

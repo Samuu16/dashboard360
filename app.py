@@ -1279,19 +1279,34 @@ def add_sensor_data(adminname):
         DynamicLevelSensorData = dynamic_models[table_name]
 
         if request.method == 'POST':
-            # Handling POST request to add sensor data
-            data = request.json.get('level_sensor_data')
-            if not data:
-                api_logger.warning("Invalid data received for admin: %s", adminname)
-                return jsonify({"message": "Invalid data"}), 400
+            # JSON validation logic from code 1 with logging
+            if not request.is_json:
+                api_logger.error("Request content type is not JSON for admin: %s", adminname)
+                return jsonify({'status': 'failure', 'message': 'Request content type is not JSON'}), 400
 
-            parsed_data = json.loads(data)
+            api_logger.info("Request is JSON for admin: %s", adminname)
+            request_data = request.get_json()
+
+            modbus_test_data = request_data.get('level_sensor_data', '{}')
+            api_logger.info("Received modbus_test_data: %s for admin: %s", modbus_test_data, adminname)
+
+            try:
+                parsed_data = json.loads(modbus_test_data)
+                api_logger.info("Parsed data successfully for admin: %s", adminname)
+            except json.JSONDecodeError:
+                api_logger.error("Invalid JSON format in level_sensor_data for admin: %s", adminname)
+                return jsonify({'status': 'failure', 'message': 'Invalid JSON format in level_sensor_data'}), 400
+
+            # Extracting and logging the parsed data
             date_str = parsed_data.get('D')
             date_obj = datetime.strptime(date_str, "%d/%m/%Y %H:%M:%S")
             full_addr = parsed_data.get('address')
             sensor_data = parsed_data.get('data')[0]
             vehicleno = parsed_data.get('Vehicle no')
             volume_liters = get_volume(sensor_data)
+
+            api_logger.info("Parsed fields: Date: %s, Address: %s, Sensor Data: %s, Vehicle No: %s, Volume: %s for admin: %s",
+                            date_str, full_addr, sensor_data, vehicleno, volume_liters, adminname)
 
             # Create a new entry
             sensor_data_entry = DynamicLevelSensorData(

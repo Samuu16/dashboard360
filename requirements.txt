@@ -1,4 +1,4 @@
-﻿Flask==2.3.3
+Flask==2.3.3
 Flask-SQLAlchemy==3.0.3
 bcrypt==4.0.1
 qrcode==7.4.2

@@ -169,19 +169,21 @@ padding: 40px 30px 30px 30px;
 
 .main2-container { 
   display: flex; 
-  margin-left: 10px;
+ 
+  
   width: 100vw; 
   position: relative; 
   top: 70px; 
   z-index: 1; 
   } 
 .main2 { 
+
 margin-top: 0;
 padding: 0;
 height: calc(100vh - 70px); 
 width: 100%; 
 overflow-y: scroll; 
-overflow-x: hidden; 
+overflow-x: scroll; 
 padding: 40px 30px 30px 30px; 
 }
 
@@ -679,6 +681,7 @@ border-radius: 4px;
 
 
 
+
 .styled-button2 {
   float: right ;
   padding: 7px 10px;
@@ -873,6 +876,27 @@ gap: 65px; /* Remove gaps between the cards */
   padding: 5px; /* Adjust padding as needed */
 }
 
+
+.pdf-button {
+  width: 100%; /* Make the PDF button full width */
+  max-width: 300px; /* Set maximum width to match other elements */
+  padding: 10px; /* Adjust padding for better touch targets */
+  text-align: center; /* Center align text within the button */
+  margin: 5px auto; /* Center the button and add vertical margin */
+  display: inline-block; /* Ensure the button behaves like a block element */
+  background-color: #007BFF; /* Primary color for the button */
+  color: #fff; /* White text color */
+  border: none; /* Remove borders */
+  border-radius: 5px; /* Rounded corners */
+  text-decoration: none; /* Remove underline from the link */
+  font-size: 14px; /* Adjust font size */
+  transition: background-color 0.3s; /* Smooth transition on hover */
+}
+
+.pdf-button:hover {
+  background-color: #0056b3; /* Darker blue on hover */
+}
+
 .floating-block {
   background-color: var(--background-color2);
   padding: 20px;
@@ -996,4 +1020,221 @@ input:checked + .slider:before {
 }
 .slider.round:before {
   border-radius: 50%;
+}
+#chartTitle {
+
+  padding: 8px;
+  width: 300px;
+  font-size: 30px;
+  border-radius: 5px;
+  margin-bottom: 10px;
+}
+
+/* Default styles for the sidebar on larger screens */
+.settings-button {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  cursor: pointer;
+}
+
+/* Submenu hidden by default */
+.submenu {
+  display: none;
+}
+
+/* Floating button and submenu for smaller screens */
+@media screen and (max-width: 768px) {
+  .settings-button {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background-color: #e7e0e0;
+      border-radius: 50%;
+      width: 60px;
+      height: 60px;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+  }
+
+  .settings-button img {
+    margin-left: 9px;
+      width: 40px;
+      height: 30px;
+  }
+
+  .settings-text {
+      display: none; /* Hide text when in floating button mode */
+  }
+
+  /* Position submenu above the floating button */
+  .submenu {
+     
+      position: fixed;
+      top: 450px;  /* Positioning submenu just above the floating button */
+      right: 20px;
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+      display: none; /* Hidden by default */
+      z-index: 1001; /* Make sure it is above the button */
+  }
+
+  .submenu-option {
+      padding: 10px;
+      cursor: pointer;
+  }
+
+  /* Show submenu when button is clicked */
+  .submenu.show {
+      display: block;
+  }
+}
+
+/* Enable horizontal scrolling on smaller screens */
+@media screen and (max-width: 768px) {
+  body {
+    overflow-x: auto; /* Allow horizontal scrolling */
+  }
+
+  .main, .main1, .main2 {
+    overflow-x: auto; /* Allow horizontal scrolling inside main sections */
+    transition: width 0.2s ease; /* Smooth width adjustment */
+  }
+
+  .navcontainer, .box-container, .report-body {
+    overflow-x: auto; /* Enable horizontal scroll for these elements */
+    transition: width 0.2s ease; /* Smooth width adjustment */
+  }
+
+  .nav {
+    width: 100%; /* Set sidebar width to 100% */
+    position: relative; /* Change position to avoid overlapping */
+    transition: width 0.2s ease; /* Smooth width adjustment */
+  }
+
+  .navcontainer {
+    width: 100%; /* Set nav container width to 100% */
+    transition: width 0.2s ease; /* Smooth width adjustment */
+  }
+
+  .main, .main1, .main2 {
+    padding: 20px; /* Adjust padding */
+    width: 100%; /* Ensure main sections take full width */
+    margin: 0; /* Remove margin to prevent overflow */
+    overflow-y: auto; /* Allow vertical scrolling if content overflows */
+    transition: width 0.2s ease; /* Smooth width adjustment */
+  }
+
+  .box-container, .box-container1, .box-container2 {
+    display: grid; /* Use grid layout for better control */
+    grid-template-columns: repeat(2, 1fr); /* Two columns for cards */
+    gap: 5px; /* Reduced gap between items */
+    justify-items: center; /* Center align items */
+  }
+
+  .box {
+    width: 100%; /* Full width for cards in the grid */
+    max-width: 300px; /* Set a maximum width for boxes */
+    margin-bottom: 10px; /* Add spacing between boxes */
+    flex: 0 1 auto; /* Prevent shrinking of cards */
+    transition: width 0.2s ease; /* Smooth width adjustment */
+  }
+
+  .table-container {
+    width: 100%; /* Ensure table container fills the available width */
+    max-width: 300px; /* Match maximum width to that of the cards */
+    margin: 0 auto; /* Center align the table container */
+  }
+
+  table {
+    width: 100%; /* Ensure table width is 100% of the container */
+    border-collapse: collapse; /* Ensure table borders collapse for alignment */
+  }
+
+  th, td {
+    padding: 5px; /* Add padding for table cells */
+    text-align: center; /* Center align text */
+    font-size: 12px; /* Reduce font size for better fit */
+  }
+
+  /* Ensure chart width is responsive */
+  .chart-container {
+    width: 50%; /* Make the chart container full width */
+    height: 300px; /* Set a specific height for the chart */
+    margin: 0 auto; /* Center align the chart container */
+    transition: width 0.2s ease, height 0.2s ease; /* Smooth width and height adjustment */
+    padding: 10px; /* Add padding for better spacing */
+  }
+
+  /* QR Code adjustments */
+  .qr-code {
+    width: 50px; /* Adjust QR code size */
+    height: 50px; /* Maintain aspect ratio */
+    margin: 0 auto; /* Center align QR code */
+  }
+
+  /* Responsive styles for submenu options */
+  .submenu-option {
+    width: 100%; /* Make submenu options full width */
+  }
+
+  .pdf-button {
+    width: 100%; /* Make the PDF button full width */
+    max-width: 300px; /* Set maximum width to match other elements */
+    padding: 10px; /* Adjust padding for better touch targets */
+    text-align: center; /* Center align text within the button */
+    margin: 5px auto; /* Center the button and add vertical margin */
+    display: inline-block; /* Ensure the button behaves like a block element */
+    background-color: #007BFF; /* Primary color for the button */
+    color: #fff; /* White text color */
+    border: none; /* Remove borders */
+    border-radius: 5px; /* Rounded corners */
+    text-decoration: none; /* Remove underline from the link */
+    font-size: 10px; /* Adjust font size */
+    transition: background-color 0.3s; /* Smooth transition on hover */
+  }
+
+  .pdf-button:hover {
+    background-color: #0056b3; /* Darker blue on hover */
+  }
+
+  .box-container2 {
+    grid-template-columns: 1fr; /* Stack items on smaller screens */
+  }
+
+  .dynamic-url {
+    word-wrap: break-word; /* Ensure long URLs wrap onto the next line */
+    font-size: 19px; /* Reduce font size for better fit */
+    text-align: center; /* Center align the URL text */
+  }
+}
+
+/* Larger screen adjustments */
+@media screen and (min-width: 768px) {
+  .main, .main1, .main2 {
+    max-width: 1290px; /* Set a maximum width for larger screens */
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  .box-container, .box-container1, .box-container2 {
+    grid-template-columns: repeat(3, 1fr); /* Increase to 3 columns for larger screens */
+  }
+
+  .box {
+    max-width: 400px; /* Adjust card width */
+  }
+
+  .table-container, .chart-container {
+    max-width: 100%; /* Ensure the table and chart fill the width on larger screens */
+  }
+  .chart-container {
+    width: 100%; /* Make the chart container full width */
+    height: auto; /* Allow height to adjust automatically */
+    margin: 0 auto; /* Center align the chart container */
+    transition: width 0.2s ease; /* Smooth width adjustment */
+    padding: 10px; /* Add padding for better spacing */
+  }
 }

@@ -45,7 +45,6 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine, Column, Integer, String, Float, Date
 
 from sqlalchemy import Table, Column, Integer, String, DateTime, Float, MetaData
-import stripe
 
 # Instantiate Flask application
 app = Flask(__name__)
@@ -55,7 +54,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
 db = SQLAlchemy(app)
 app.secret_key = 'secret_key'
 
-stripe.api_key = os.getenv('STRIPE_SECRET_KEY')  # or use stripe.api_key = 'your_secret_key'
+
 
 Base = declarative_base()
 # Define conversion table
@@ -1643,46 +1642,9 @@ def get_current_user():
 def payment_page():
     return render_template('payment.html')
 
-# Route for handling Stripe payment
-@app.route('/create-payment-intent', methods=['POST'])
-def create_payment():
-    try:
-        # Create a PaymentIntent with the order amount and currency
-        amount = 2000  # In cents (e.g., 2000 = $20)
-        intent = stripe.PaymentIntent.create(
-            amount=amount,
-            currency='usd',
-            payment_method_types=['card']
-        )
-        return jsonify({
-            'clientSecret': intent['client_secret']
-        })
-    except Exception as e:
-        return jsonify(error=str(e)), 403
 
 
-@app.route('/create-payment-intent', methods=['POST'])
-def create_payment_intent():
-    data = request.json
-    plan = data.get('plan')
-    
-    # Set the amount based on the selected plan
-    if plan == 'basic':
-        amount = 1000  # $10.00
-    elif plan == 'pro':
-        amount = 2500  # $25.00
-    elif plan == 'enterprise':
-        amount = 5000  # $50.00
-    else:
-        return jsonify({'error': 'Invalid plan'}), 400
 
-    # Create a PaymentIntent with the order amount and currency
-    intent = stripe.PaymentIntent.create(
-        amount=amount,
-        currency='usd',
-        receipt_email=data.get('email')
-    )
-    return jsonify({'clientSecret': intent['client_secret']})
 
 
 if __name__ == '__main__':

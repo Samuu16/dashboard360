@@ -35,40 +35,27 @@ from sqlalchemy.sql import func
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import login_required, current_user
 # Load environment variables from .env file
-
+from flask import Response
+from io import BytesIO
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+ 
 
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine, Column, Integer, String, Float, Date
 
 from sqlalchemy import Table, Column, Integer, String, DateTime, Float, MetaData
-
+import stripe
 
 # Instantiate Flask application
 app = Flask(__name__)
-
-# Read environment variables
-server = os.getenv('SQL_SERVER')
-database = os.getenv('SQL_DATABASE')
-username = os.getenv('SQL_USER')
-password = os.getenv('SQL_PASSWORD')
-driver = os.getenv('SQL_DRIVER', 'ODBC Driver 18 for SQL Server')
-encrypt = os.getenv('SQL_ENCRYPT', 'yes')
-trust_cert = os.getenv('SQL_TRUST_SERVER_CERTIFICATE', 'no')
-timeout = os.getenv('SQL_CONNECTION_TIMEOUT', '30')
-
-# Print password partially for security
-
-# Construct the connection string
-params = urllib.parse.quote_plus("Driver={ODBC Driver 18 for SQL Server};Server=tcp:myserver212.database.windows.net,1433;Database=snehatrial;Uid=samiksha;Pwd=Sneha@12;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;")
-
-app.config['SQLALCHEMY_DATABASE_URI'] = f'mssql+pyodbc:///?odbc_connect={params}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Print the constructed connection string for debugging purposes
-print(f"Connection String: {app.config['SQLALCHEMY_DATABASE_URI']}")
-
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
 db = SQLAlchemy(app)
-app.secret_key='secret_key'
+app.secret_key = 'secret_key'
+
+stripe.api_key = os.getenv('STRIPE_SECRET_KEY')  # or use stripe.api_key = 'your_secret_key'
 
 Base = declarative_base()
 # Define conversion table
@@ -157,16 +144,28 @@ class AdminDashboard(db.Model):
 
 
 
-
 def reset_dashboard_data(admin_id):
     super_admin_email = 'admin@gmail.com'
     super_admin = User.query.filter_by(email=super_admin_email).first()
-    admin = User.query.get(admin_id)  # Fetch the admin user
-    admin_name = admin.name  # Get the admin's name
+
+    # Try to find the admin in the User model first
+    admin = User.query.get(admin_id)
+
+    # If not found in User, check the UserAccount model
+    if admin is None:
+        admin = UserAccount.query.get(admin_id)
+
+    # Ensure we found a valid admin
+    if admin is None:
+        raise ValueError("Admin user not found in either User or UserAccount model.")
+
+    # Get the admin's name
+    admin_name = getattr(admin, 'name', None) or getattr(admin, 'accountname', None)
 
     if super_admin and super_admin.id == admin_id:
         return  # Skip resetting data for the super admin
 
+    # Query the AdminDashboard using the admin's ID
     dashboard = AdminDashboard.query.filter_by(admin_id=admin_id).first()
     if not dashboard:
         # Create a new dashboard if it doesn't exist
@@ -180,11 +179,10 @@ def reset_dashboard_data(admin_id):
         # Optionally, you can choose to reset the dashboard data if needed
         pass  # Do nothing to keep existing data
 
+    # Commit changes to the database
     db.session.commit()
 
-    # No need to drop the existing table for non-super admins
-    # Simply ensure the correct table is used
-
+    # Create sensor data table for the admin
     create_sensor_data_table(f'level_sensor_data_{admin_name}')  # Ensure the table exists
     db.session.commit()
 
@@ -487,21 +485,65 @@ def login():
         email = request.form['email']
         password = request.form['password']
 
+        print(f"Attempting to log in with email: {email}")
+
+        # Try to find the user in the User model first
         user = User.query.filter_by(email=email).first()
 
-        if user and user.check_password(password):
-            session['email'] = user.email
-            session['is_admin'] = user.is_admin
-            session['admin_name'] = user.name  # Store admin name in session
+        # If the user is not found in the User model, check UserAccount model
+        if user is None:
+            user = UserAccount.query.filter_by(accountemail=email).first()
+            print("User not found in User model. Checking UserAccount model.")
 
-            if user.is_admin and not is_super_admin(user):
-                reset_dashboard_data(user.id)
+        # Validate the password and set session variables
+        if user:
+            # Check password based on the model type
+            if hasattr(user, 'check_password'):
+                is_valid_password = user.check_password(password)  # For User model
+            else:
+                is_valid_password = check_password_hash(user.accountpassword, password)  # For UserAccount model
 
-            return redirect(url_for('admin_dashboard', adminname=user.name))  # Redirect to dynamic dashboard
+            if is_valid_password:
+                # Clear old session data
+                session.clear()
+
+                # Set session values, handling attributes for both User and UserAccount
+                session['email'] = getattr(user, 'email', None) or getattr(user, 'accountemail', None)
+                session['is_admin'] = getattr(user, 'is_admin', False)  # Use is_admin from UserAccount if available
+
+                if session['is_admin']:
+                    session['admin_name'] = getattr(user, 'name', None) or getattr(user, 'accountname', None)
+                    if not session['admin_name']:
+                        error = 'Admin name is not set. Cannot proceed.'
+                        print(f"Login failed for email: {email}. Reason: {error}")
+                        return render_template('login.html', error=error)
+
+                    # Admin-specific logic (if it's an admin)
+                    reset_dashboard_data(user.id)  # Add any necessary logic for admin users
+                    print(f"Admin login successful! Redirecting to admin dashboard for admin_name: {session['admin_name']}")
+                    
+                    return redirect(url_for('admin_dashboard', adminname=session['admin_name']))
+
+                else:
+                    session['user_name'] = getattr(user, 'name', None) or getattr(user, 'accountname', None)
+                    if not session['user_name']:
+                        error = 'User name is not set. Cannot proceed.'
+                        print(f"Login failed for email: {email}. Reason: {error}")
+                        return render_template('login.html', error=error)
+
+                    # Redirect to the user dashboard, passing the user name
+                    print(f"User login successful! Redirecting to user dashboard for user_name: {session['user_name']}")
+                    return redirect(url_for('dashboard', username=session['user_name']))
+
+            else:
+                error = 'Invalid password. Please try again.'
+                print(f"Password check failed for email: {email}")
         else:
-            error = 'Invalid credentials. Please try again.'
+            error = 'User not found. Please try again.'
+            print(f"User with email: {email} not found in both models.")
 
     return render_template('login.html', error=error)
+
 
 
 
@@ -532,62 +574,91 @@ def api_login():
 
 
 
+from sqlalchemy import inspect  # Import the inspect function from SQLAlchemy
 @app.route('/dashboard/<adminname>')
 def admin_dashboard(adminname):
     if 'email' in session:
+        # First, check if the user is in the User model (Admin)
         user = User.query.filter_by(email=session['email']).first()
 
+        # If not found in User (Admin), check in the UserAccount model (Regular User)
+        if user is None:
+            user = UserAccount.query.filter_by(accountemail=session['email']).first()
+
+        # If user still not found, redirect to login
         if user is None:
             return redirect('/login')
 
-        if user.name != adminname:
-            return redirect(url_for('admin_dashboard', adminname=user.name))
+        # Use accountname for UserAccount model and name for User model
+        user_name = user.name if hasattr(user, 'name') else user.accountname
 
-        # Set the table name dynamically based on adminname
-        table_name = f'level_sensor_data_{adminname}'
-        metadata = MetaData()
-        table = Table(table_name, metadata, autoload_with=db.engine)
+        # Redirect if the username in the URL does not match the session's username
+        if user_name != adminname:
+            return redirect(url_for('admin_dashboard', adminname=user_name))
 
-        filter_option = request.args.get('filter', 'latest')
-        page = request.args.get('page', 1, type=int)
-        search_query = request.args.get('query', '')
+        # If user is an admin, continue with dynamic table querying
+        if isinstance(user, User) and user.is_admin:
+            # Set the table name dynamically based on adminname
+            table_name = f'level_sensor_data_{adminname}'
+            metadata = MetaData()
 
-        query = db.session.query(table)
+            # Check if the table exists in the database
+            inspector = inspect(db.engine)
+            if table_name not in inspector.get_table_names():
+                # If table doesn't exist, you can redirect or show an error message
+                return redirect('/dashboard')  # Adjust as needed
 
-        if search_query:
-            try:
-                search_id = int(search_query)
-                query = query.filter(
-                    (table.c.id == search_id) |
-                    (table.c.date.like(f'%{search_query}%')) |
-                    (table.c.full_addr.like(f'%{search_query}%')) |
-                    (table.c.sensor_data.like(f'%{search_query}%')) |
-                    (table.c.vehicleno.like(f'%{search_query}%'))
-                )
-            except ValueError:
-                query = query.filter(
-                    (table.c.date.like(f'%{search_query}%')) |
-                    (table.c.full_addr.like(f'%{search_query}%')) |
-                    (table.c.sensor_data.like(f'%{search_query}%')) |
-                    (table.c.vehicleno.like(f'%{search_query}%'))
-                )
+            # Load the table dynamically for admins
+            table = Table(table_name, metadata, autoload_with=db.engine)
 
-        if filter_option == 'oldest':
-            query = query.order_by(table.c.date.asc())
+            # Fetch filter options and pagination details
+            filter_option = request.args.get('filter', 'latest')
+            page = request.args.get('page', 1, type=int)
+            search_query = request.args.get('query', '')
+
+            # Query the dynamic table for admins
+            query = db.session.query(table)
+
+            # Handle search query filtering for admins
+            if search_query:
+                try:
+                    search_id = int(search_query)
+                    query = query.filter(
+                        (table.c.id == search_id) |
+                        (table.c.date.like(f'%{search_query}%')) |
+                        (table.c.full_addr.like(f'%{search_query}%')) |
+                        (table.c.sensor_data.like(f'%{search_query}%')) |
+                        (table.c.vehicleno.like(f'%{search_query}%'))
+                    )
+                except ValueError:
+                    query = query.filter(
+                        (table.c.date.like(f'%{search_query}%')) |
+                        (table.c.full_addr.like(f'%{search_query}%')) |
+                        (table.c.sensor_data.like(f'%{search_query}%')) |
+                        (table.c.vehicleno.like(f'%{search_query}%'))
+                    )
+
+            # Order the results by date
+            if filter_option == 'oldest':
+                query = query.order_by(table.c.date.asc())
+            else:
+                query = query.order_by(table.c.date.desc())
+
+            # Paginate the results for admins
+            sense_data_pagination = query.paginate(page=page, per_page=10)
+            sense_data = []
+            for row in sense_data_pagination.items:
+                data_point = {col.name: getattr(row, col.name) for col in table.columns}
+                data_point['volume_liters'] = get_volume(data_point['sensor_data'])
+                sense_data.append(data_point)
+
+        # If user is a regular user (UserAccount), query relevant data from UserAccount
         else:
-            query = query.order_by(table.c.date.desc())
+            # Regular users don't have dynamic tables, so we query static data related to them
+            sense_data_pagination = UserAccount.query.filter_by(accountemail=session['email']).paginate(page=page, per_page=10)
+            sense_data = sense_data_pagination.items
 
-        sense_data_pagination = query.paginate(page=page, per_page=10)
-        sense_data = []
-        for row in sense_data_pagination.items:
-            data_point = {col.name: getattr(row, col.name) for col in table.columns}
-            data_point['volume_liters'] = get_volume(data_point['sensor_data'])
-            sense_data.append(data_point)
-
-        # Print the data for debugging
-        print("Sense Data:", sense_data)
-        print("Pagination Info:", sense_data_pagination)
-
+        # Render the same dashboard template for both admins and users
         return render_template(
             'dashboard.html',
             user=user,
@@ -596,11 +667,9 @@ def admin_dashboard(adminname):
             pagination=sense_data_pagination,
             search_query=search_query
         )
+
+    # If the session does not contain an email, redirect to login
     return redirect('/login')
-
-
-
-
 
 
 @app.route('/api/admin/<adminname>/dashboard', methods=['GET'])
@@ -629,26 +698,99 @@ def get_dashboard_data(adminname):
 
     return jsonify(result), 200
 
+from sqlalchemy import inspect
+from flask import redirect, session, request, url_for, render_template
 
+@app.route('/user_dashboard/<username>')
+def user_dashboard(username):
+    if 'email' in session:
+        # Fetch user from UserAccount model based on session email
+        user = UserAccount.query.filter_by(accountemail=session['email']).first()
 
+        # If user not found, redirect to login
+        if user is None:
+            return redirect('/login')
 
+        # Check if the username in the URL matches the accountname in the session
+        if user.accountname != username:
+            return redirect(url_for('user_dashboard', username=user.accountname))
 
+        # Fetch filter options and pagination details for regular users
+        filter_option = request.args.get('filter', 'latest')
+        page = request.args.get('page', 1, type=int)
+        search_query = request.args.get('query', '')
 
+        # Query the user data for the dashboard (since no dynamic tables for regular users)
+        query = UserAccount.query.filter_by(accountemail=user.accountemail)
 
+        # Handle search query filtering for regular users
+        if search_query:
+            query = query.filter(
+                (UserAccount.accountname.like(f'%{search_query}%')) |
+                (UserAccount.accountemail.like(f'%{search_query}%'))
+            )
 
+        # Order results by created date (oldest or latest)
+        if filter_option == 'oldest':
+            query = query.order_by(UserAccount.created_at.asc())
+        else:
+            query = query.order_by(UserAccount.created_at.desc())
+
+        # Paginate the results
+        sense_data_pagination = query.paginate(page=page, per_page=10)
+        sense_data = sense_data_pagination.items
+
+        # Render the dashboard template for regular users
+        return render_template(
+            'user_dashboard.html',
+            user=user,
+            sense_data=sense_data,
+            filter_option=filter_option,
+            pagination=sense_data_pagination,
+            search_query=search_query
+        )
+
+    # If the session does not contain an email, redirect to login
+    return redirect('/login')
+# Route for specific username in the dashboard (User dashboard)
+@app.route('/dashboard/<username>')
+def use_dashboard(username):
+    if 'email' in session:
+        # Check if the user is an admin
+        user = User.query.filter_by(email=session['email']).first()
+        
+        if user and user.is_admin:
+            return redirect(url_for('admin_dashboard', adminname=user.name))
+        
+        # If not found in User, check in the UserAccount model (Regular User)
+        user = UserAccount.query.filter_by(accountemail=session['email']).first()
+        
+        # If user found in UserAccount, render the user dashboard
+        if user:
+            return redirect(url_for('user_dashboard', username=user.accountname))
+    
+    return redirect('/login')
+
+# Generic dashboard route for admin and users (Handles both admin and user dashboard logic)
 @app.route('/dashboard')
 def dashboard():
     if 'email' in session:
+        # Fetch user from User or UserAccount table based on session email
         user = User.query.filter_by(email=session['email']).first()
-
         if user is None:
             user = UserAccount.query.filter_by(accountemail=session['email']).first()
 
+        # If no user found in either table, redirect to login
         if user is None:
-            # User not found, redirect to login or show an error message
             return redirect('/login')
 
-        # Load the admin's dashboard data and reset if necessary
+        # Initialize dashboard_content
+        dashboard_content = {}
+        filter_option = request.args.get('filter', 'latest')
+        page = request.args.get('page', 1, type=int)
+        search_query = request.args.get('query', '')
+
+        ### Logic for Admins ###
         if user.is_admin:
             dashboard_data = AdminDashboard.query.filter_by(admin_id=user.id).first()
             if dashboard_data:
@@ -656,9 +798,9 @@ def dashboard():
             else:
                 # Reset the dashboard for new admin
                 dashboard_content = {
-                    "cards": [],  # Reset cards to empty list
-                    "tables": [],  # Reset tables to empty list
-                    "charts": []   # Reset charts to empty list
+                    "cards": [],
+                    "tables": [],
+                    "charts": []
                 }
                 # Save the reset state to the database
                 new_dashboard_data = AdminDashboard(
@@ -668,55 +810,84 @@ def dashboard():
                 db.session.add(new_dashboard_data)
                 db.session.commit()
 
-        filter_option = request.args.get('filter', 'latest')
-        page = request.args.get('page', 1, type=int)
-        search_query = request.args.get('query', '')
+            # Load and query the dynamic table for admins (using the admin_dashboard logic)
+            table_name = f'level_sensor_data_{user.name}'  # Assuming user.name is adminname
+            metadata = MetaData()
+            inspector = inspect(db.engine)
+            if table_name not in inspector.get_table_names():
+                return redirect('/dashboard')
 
-        query = LevelSensorData.query
+            table = Table(table_name, metadata, autoload_with=db.engine)
 
-        if search_query:
-            # Split search_query to handle numerical and textual searches
-            try:
-                search_id = int(search_query)
-                query = query.filter(
-                    (LevelSensorData.id == search_id) |
-                    (LevelSensorData.date.like(f'%{search_query}%')) |
-                    (LevelSensorData.full_addr.like(f'%{search_query}%')) |
-                    (LevelSensorData.sensor_data.like(f'%{search_query}%')) |
-                    (LevelSensorData.vehicleno.like(f'%{search_query}%'))
-                )
-            except ValueError:
-                query = query.filter(
-                    (LevelSensorData.date.like(f'%{search_query}%')) |
-                    (LevelSensorData.full_addr.like(f'%{search_query}%')) |
-                    (LevelSensorData.sensor_data.like(f'%{search_query}%')) |
-                    (LevelSensorData.vehicleno.like(f'%{search_query}%'))
-                )
+            query = db.session.query(table)
 
-        if filter_option == 'oldest':
-            query = query.order_by(LevelSensorData.date.asc())
+            # Apply search filter for admins
+            if search_query:
+                try:
+                    search_id = int(search_query)
+                    query = query.filter(
+                        (table.c.id == search_id) |
+                        (table.c.date.like(f'%{search_query}%')) |
+                        (table.c.full_addr.like(f'%{search_query}%')) |
+                        (table.c.sensor_data.like(f'%{search_query}%')) |
+                        (table.c.vehicleno.like(f'%{search_query}%'))
+                    )
+                except ValueError:
+                    query = query.filter(
+                        (table.c.date.like(f'%{search_query}%')) |
+                        (table.c.full_addr.like(f'%{search_query}%')) |
+                        (table.c.sensor_data.like(f'%{search_query}%')) |
+                        (table.c.vehicleno.like(f'%{search_query}%'))
+                    )
+
+            # Handle filtering (latest/oldest)
+            if filter_option == 'oldest':
+                query = query.order_by(table.c.date.asc())
+            else:
+                query = query.order_by(table.c.date.desc())
+
+            # Paginate the results
+            sense_data_pagination = query.paginate(page=page, per_page=10)
+            sense_data = []
+            for row in sense_data_pagination.items:
+                data_point = {col.name: getattr(row, col.name) for col in table.columns}
+                data_point['volume_liters'] = get_volume(data_point['sensor_data'])
+                sense_data.append(data_point)
+
+        ### Logic for Non-Admins (Regular Users) ###
         else:
-            query = query.order_by(LevelSensorData.date.desc())
+            query = UserAccount.query.filter_by(id=user.id)
 
-        sense_data_pagination = query.paginate(page=page, per_page=10)
-        sense_data = sense_data_pagination.items
+            if search_query:
+                query = query.filter(
+                    (UserAccount.accountname.like(f'%{search_query}%')) |
+                    (UserAccount.accountemail.like(f'%{search_query}%'))
+                )
 
-        for data_point in sense_data:
-            data_point.volume_liters = get_volume(data_point.sensor_data)
+            # Order the results by creation date
+            if filter_option == 'oldest':
+                query = query.order_by(UserAccount.created_at.asc())
+            else:
+                query = query.order_by(UserAccount.created_at.desc())
 
-        # Check if the user is an instance of UserAccount and pass the appropriate role
-        user_role = user.is_admin if isinstance(user, UserAccount) else user.is_super_admin
+            # Paginate the user data
+            sense_data_pagination = query.paginate(page=page, per_page=10)
+            sense_data = sense_data_pagination.items
+
+        # Determine user role (admin or user) and render the correct template
+        user_role = user.is_admin if hasattr(user, 'is_admin') else False
 
         return render_template(
             'dashboard.html',
             user=user,
-            user_role=user_role,  # Pass user role to template
-            sense_data=sense_data,
+            user_role=user_role,  # Pass user role (admin or regular user)
+            sense_data=sense_data,  # Pass sense data
             filter_option=filter_option,
             pagination=sense_data_pagination,
             search_query=search_query,
-            dashboard_content=dashboard_content  # Pass the reset or existing dashboard content
+            dashboard_content=dashboard_content  # Pass the dashboard content if admin
         )
+
     return redirect('/login')
 
 
@@ -930,28 +1101,7 @@ def interpolate(x1, y1, x2, y2, x):
     return round(y1 + ((y2 - y1) / (x2 - x1)) * (x - x1), 3)
 
 
-@app.route('/api/sensor_data/<string:admin_name>', methods=['GET'])
-def get_sensor_data(admin_name):
-    try:
-        # Assuming you have a function to get data specific to the admin
-        sensor_data = LevelSensorData.query.filter_by(admin_name=admin_name).all()
-        if not sensor_data:
-            return jsonify(error='No data available'), 404
 
-        labels = [data.date.strftime('%d/%m/%Y %H:%M:%S') for data in sensor_data]
-        sensor_values = [data.sensor_data for data in sensor_data]
-        volume_liters = [data.volume_liters for data in sensor_data]
-
-        return jsonify(labels=labels, sensorData=sensor_values, volumeLiters=volume_liters)
-    except Exception as e:
-        print(f"Error fetching sensor data: {str(e)}")
-        return jsonify(error='Internal server error'), 500
-    
-from flask import Response
-from io import BytesIO
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
- 
 # QR and PDF generation routes
 @app.route('/generate_pdf/<int:id>', methods=['GET'])
 def generate_pdf(id):
@@ -1134,23 +1284,31 @@ def update_user_status(user_id):
         return jsonify({'message': 'User not found'}), 404
 
 
-
-    
 @app.route('/api/users/<int:user_id>/role', methods=['POST'])
 def update_user_role(user_id):
+    # Check in User model first
     user = User.query.get(user_id)
+
+    # If not found in User model, check UserAccount model
+    if not user:
+        user = UserAccount.query.get(user_id)  # Ensure this line checks UserAccount
+
+    # Return error if no user is found in both models
     if not user:
         return jsonify({"error": "User not found"}), 404
-    
+
+    # Parse JSON data from the request
     data = request.json
     is_admin = data.get('is_admin')
 
-    if is_admin is not None:
+    # Validate that 'is_admin' is provided and is a boolean
+    if isinstance(is_admin, bool):
         user.is_admin = is_admin
-        db.session.commit()
+        db.session.commit()  # Ensure this commits the change
         return jsonify({"message": "User role updated successfully"}), 200
     else:
-        return jsonify({"error": "Invalid data"}), 400
+        return jsonify({"error": "Invalid data. 'is_admin' must be a boolean."}), 400
+
     
 # Ensure that only logged-in admins can access the route
 @app.route('/admin/add-user', methods=['GET', 'POST'])
@@ -1227,16 +1385,21 @@ def update_user_account_status(account_id):
     user.status = status
     db.session.commit()
     return jsonify({'message': 'User status updated successfully'})
-
 @app.route('/api/user_accounts/<int:account_id>/role', methods=['POST'])
 def update_role(account_id):
-    user = User.query.get(account_id)
+    # Get the new role from the request
     new_role = request.json.get('role')
-    
+    print(f"Updating account ID {account_id} to role: {new_role}")  # Debugging line
+
+    # Try to find the user in the User table first
+    user = User.query.get(account_id)
+
     if user:
+        # Update role for User
         user.is_admin = new_role == 'admin'
         user.is_super_admin = user.email == 'admin@gmail.com'
-        
+
+        # Optionally create sensor data table if this user is an admin
         if user.is_admin:
             create_sensor_data_table(f'level_sensor_data_{user.name}')
         
@@ -1247,7 +1410,20 @@ def update_role(account_id):
             db.session.rollback()
             return jsonify({'message': 'Error updating role.'}), 500
     else:
-        return jsonify({'message': 'User not found.'}), 404
+        # If user not found in User table, check in UserAccount table
+        user_account = UserAccount.query.get(account_id)
+
+        if user_account:
+            # Update role for UserAccount
+            user_account.is_admin = new_role == 'admin'
+            try:
+                db.session.commit()
+                return jsonify({'message': 'Role updated successfully for UserAccount!'}), 200
+            except IntegrityError:
+                db.session.rollback()
+                return jsonify({'message': 'Error updating role for UserAccount.'}), 500
+        else:
+            return jsonify({'message': 'User not found in either table.'}), 404
 
 @app.route('/api/account_counts', methods=['GET'])
 def get_account_counts():
@@ -1257,8 +1433,6 @@ def get_account_counts():
         'totalAccounts': total_accounts,
         'activeAccounts': active_accounts
     })
-
-
 
 
 @app.route('/api/admin/<adminname>/sensor_data', methods=['GET', 'POST'])
@@ -1342,14 +1516,173 @@ def add_sensor_data(adminname):
         api_logger.error("An error occurred for admin: %s, error: %s", adminname, str(e))
         return jsonify({"message": "An error occurred", "error": str(e)}), 500
 
+@app.route('/api/user/<username>/sensor_data', methods=['GET', 'POST'])
+def add_user_sensor_data(username):
+    try:
+        # Try to find the user in both User and UserAccount models
+        user = User.query.filter_by(name=username).first()
+        if not user:
+            user = UserAccount.query.filter_by(accountname=username).first()
+
+        if not user:
+            api_logger.warning("User '%s' not found", username)
+            return jsonify({"message": "User not found"}), 404
+
+        table_name = f'level_sensor_data_{username}'
+
+        # Check if the model exists in the dynamic_models dictionary
+        if table_name not in dynamic_models:
+            api_logger.info("Model for %s not found. Attempting to create it.", table_name)
+            create_sensor_data_table(table_name)
+
+        DynamicLevelSensorData = dynamic_models[table_name]
+
+        if request.method == 'POST':
+            # JSON validation logic
+            if not request.is_json:
+                api_logger.error("Request content type is not JSON for user: %s", username)
+                return jsonify({'status': 'failure', 'message': 'Request content type is not JSON'}), 400
+
+            api_logger.info("Request is JSON for user: %s", username)
+            request_data = request.get_json()
+
+            modbus_test_data = request_data.get('level_sensor_data', '{}')
+            api_logger.info("Received modbus_test_data: %s for user: %s", modbus_test_data, username)
+
+            try:
+                parsed_data = json.loads(modbus_test_data)
+                api_logger.info("Parsed data successfully for user: %s", username)
+            except json.JSONDecodeError:
+                api_logger.error("Invalid JSON format in level_sensor_data for user: %s", username)
+                return jsonify({'status': 'failure', 'message': 'Invalid JSON format in level_sensor_data'}), 400
+
+            # Extracting and logging the parsed data
+            date_str = parsed_data.get('D')
+            date_obj = datetime.strptime(date_str, "%d/%m/%Y %H:%M:%S")
+            full_addr = parsed_data.get('address')
+            sensor_data = parsed_data.get('data')[0]
+            vehicleno = parsed_data.get('Vehicle no')
+            volume_liters = get_volume(sensor_data)
+
+            api_logger.info("Parsed fields: Date: %s, Address: %s, Sensor Data: %s, Vehicle No: %s, Volume: %s for user: %s",
+                            date_str, full_addr, sensor_data, vehicleno, volume_liters, username)
+
+            # Create a new entry
+            sensor_data_entry = DynamicLevelSensorData(
+                date=date_str,
+                full_addr=full_addr,
+                sensor_data=sensor_data,
+                vehicleno=vehicleno,
+                volume_liters=volume_liters
+            )
+
+            db.session.add(sensor_data_entry)
+            db.session.commit()
+
+            api_logger.info("Data stored successfully for user: %s, data: %s", username, json.dumps(parsed_data))
+
+            return jsonify({"message": f"Data added to {table_name}"}), 201
+
+        elif request.method == 'GET':
+            # Fetching volume_liters data for the chart
+            sensor_data = DynamicLevelSensorData.query.all()
+
+            if not sensor_data:
+                api_logger.warning("No data found for user: %s", username)
+                return jsonify({"message": "No data found"}), 404
+
+            # Return date and volume_liters as a JSON response
+            result = [{"date": entry.date, "volume_liters": entry.volume_liters} for entry in sensor_data]
+            api_logger.info("Data fetched successfully for user: %s", username)
+
+            return jsonify(result), 200
+
+    except Exception as e:
+        api_logger.error("An error occurred for user: %s, error: %s", username, str(e))
+        return jsonify({"message": "An error occurred", "error": str(e)}), 500
+
+
+
 @app.route('/api/get_current_admin', methods=['GET'])
 def get_current_admin():
     admin_name = session.get('admin_name')
     if admin_name:
-        return jsonify({"admin_name": admin_name}), 200
+        # Query the User table for the admin based on the admin_name
+        admin_account = User.query.filter_by(name=admin_name, is_admin=1).first()
+        
+        if admin_account:
+            # Return additional admin details if needed
+            return jsonify({
+                "admin_name": admin_account.name,
+                "email": admin_account.email,
+                "status": admin_account.status,
+                "is_super_admin": admin_account.is_super_admin
+            }), 200
+        else:
+            return jsonify({"message": "No admin found in the User table"}), 404
     else:
         return jsonify({"message": "No admin logged in"}), 404
 
+
+@app.route('/api/get_current_user', methods=['GET'])
+def get_current_user():
+    user_name = session.get('user_name')
+    if user_name:
+        # Check if the user exists in the UserAccount table
+        user_account = UserAccount.query.filter_by(accountname=user_name).first()
+        if user_account:
+            return jsonify({"user_name": user_name}), 200
+        else:
+            return jsonify({"message": "No user found in the database"}), 404
+    else:
+        return jsonify({"message": "No user logged in"}), 404
+
+
+# Route for the payment page
+@app.route('/payment', methods=['GET'])
+def payment_page():
+    return render_template('payment.html')
+
+# Route for handling Stripe payment
+@app.route('/create-payment-intent', methods=['POST'])
+def create_payment():
+    try:
+        # Create a PaymentIntent with the order amount and currency
+        amount = 2000  # In cents (e.g., 2000 = $20)
+        intent = stripe.PaymentIntent.create(
+            amount=amount,
+            currency='usd',
+            payment_method_types=['card']
+        )
+        return jsonify({
+            'clientSecret': intent['client_secret']
+        })
+    except Exception as e:
+        return jsonify(error=str(e)), 403
+
+
+@app.route('/create-payment-intent', methods=['POST'])
+def create_payment_intent():
+    data = request.json
+    plan = data.get('plan')
+    
+    # Set the amount based on the selected plan
+    if plan == 'basic':
+        amount = 1000  # $10.00
+    elif plan == 'pro':
+        amount = 2500  # $25.00
+    elif plan == 'enterprise':
+        amount = 5000  # $50.00
+    else:
+        return jsonify({'error': 'Invalid plan'}), 400
+
+    # Create a PaymentIntent with the order amount and currency
+    intent = stripe.PaymentIntent.create(
+        amount=amount,
+        currency='usd',
+        receipt_email=data.get('email')
+    )
+    return jsonify({'clientSecret': intent['client_secret']})
 
 
 if __name__ == '__main__':

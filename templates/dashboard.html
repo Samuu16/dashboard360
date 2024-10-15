@@ -636,32 +636,29 @@ function toggleSubmenu(submenuId) {
         {% endif %}
       
         <table class="table table-bordered">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Date</th>
-              <th>Full Address</th>
-              <th>Sensor Data</th>
-              <th>Volume (Liters)</th>
-              <th>Vehicle No</th>
-              <th>QR Code</th>
-              <th>PDF</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for data_point in sense_data %}
-            <tr>
-              <td>{{ data_point.id }}</td>
-              <td>
-                <div class="date">{{ data_point.date.strftime('%Y-%m-%d') }}</div>
-                <div class="time">{{ data_point.date.strftime('%H:%M:%S') }}</div>
-            </td>
-              <td>{{ data_point.date }}</td>
-              <td>{{ data_point.full_addr }}</td>
-              <td>{{ data_point.sensor_data }}</td>
-              <td>{{ data_point.volume_liters }}</td>
-              <td>{{ data_point.vehicleno }}</td>
-              <td><img src="{{ url_for('generate_qr', id=data_point.id) }}" alt="QR Code"></td>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Date</th>
+                        <th>Full Address</th>
+                        <th>Sensor Data</th>
+                        <th>Volume (Liters)</th>
+                        <th>Vehicle No</th>
+                        <th>QR Code</th>
+                        <th>PDF</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for data_point in sense_data %}
+                    <tr>
+                        <td>{{ data_point.id }}</td>
+                        <td>{{ data_point.date }}</td>
+                        <td>{{ data_point.full_addr }}</td>
+                        <td>{{ data_point.sensor_data }}</td>
+                        <td>{{ data_point.volume_liters }}</td>
+                        <td>{{ data_point.vehicleno }}</td>
+
+              <td><img src="{{ url_for('generate_qr', id=data_point.id) }}" class="qr-code" alt="QR Code"></td>
               <td><a href="{{ url_for('generate_pdf', id=data_point.id) }}" class="btn btn-primary">Download PDF</a></td>
             </tr>
             {% endfor %}

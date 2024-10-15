@@ -35,9 +35,9 @@
       <img src="/static/imgs/logo.png" class="icn" alt="logo">
     </div>
     <div class="message">
-      Welcome! <b>Name: </b> {{user.name}} 
-               <b>Email: </b> {{user.email}}
-    </div>
+      Welcome! <b>Name: </b> {{ user.name if user.name else user.accountname }} 
+               <b>Email: </b> {{ user.email if user.email else user.accountemail }}
+  </div>
   </header>
 
   <div class="main-container"> 
@@ -49,13 +49,13 @@
             <h4>Dashboard</h4>
           </div>
          
-          <div class="nav-option option6" onclick="toggleSubmenu('settingsSubmenu')">
+          <div class="nav-option option6 settings-button" onclick="toggleSubmenu('settingsSubmenu')">
             {% if user.is_super_admin %}
                 <img src="https://media.geeksforgeeks.org/wp-content/uploads/20221210183320/4.png" class="nav-img" alt="settings">
-                <h4>Settings</h4>
+                <h4 class="settings-text">Settings</h4>
             {% elif user.is_admin %}
                 <img src="https://media.geeksforgeeks.org/wp-content/uploads/20221210183320/4.png" class="nav-img" alt="settings">
-                <h4>Settings</h4>
+                <h4 class="settings-text">Settings</h4>
             {% endif %}
         </div>
         
@@ -67,6 +67,11 @@
                 <div class="submenu-option" onclick="openContent('addUserAccounts')">Add a User</div>
                 <div class="submenu-option" onclick="openContent('setappurl')">Application Settings</div>
             {% endif %}
+
+            <div class="submenu-option" onclick="window.location.href='/dashboard'">Back</div>
+        
+            <div class="submenu-option" onclick="window.location.href='/login'">Logout</div>
+
         </div>
           
          
@@ -131,12 +136,12 @@ function toggleSubmenu(submenuId) {
        <!-- Dashboard content goes here -->
         <h2>Dashboard</h2>       
 
-    <div class="searchbar2">
+    <!-- <div class="searchbar2">
       <input type="text" placeholder="Search">
       <div class="searchbtn">
         <img src="https://media.geeksforgeeks.org/wp-content/uploads/20221210180758/Untitled-design-(28).png" class="icn srchicn" alt="search-button">
       </div>
-    </div>
+    </div>-->
     <div class="box-container">
       <div class="box box1">
         <div class="text">
@@ -169,39 +174,54 @@ function toggleSubmenu(submenuId) {
     </div>
     <script>
       function updateDeviceEntriesCount(adminname) {
-          $.get(`/api/${adminname}/device_entries_logged`, function(data) {
-              $("#devices_logged").text(data.device_entries_logged);
-          });
-      }
-  
-      function updateActiveDevicesCount(adminname) {
-          $.get(`/api/${adminname}/no_of_devices_active`, function(data) {
-              $("#active_devices").text(data.no_of_devices_active);
-          });
-      }
-  
-      function startAutoRefresh(adminname) {
-          // Instantly update the counts on page load
-          updateDeviceEntriesCount(adminname);
-          updateActiveDevicesCount(adminname);
-  
-          // Continue to update the counts every 5 seconds
-          setInterval(function() {
-              updateDeviceEntriesCount(adminname);
-              updateActiveDevicesCount(adminname);
-          }, 5000); // Refresh every 5 seconds
-      }
-  
-      // Fetch current admin name and start auto-refresh
-      $(document).ready(function() {
-          $.get("/api/get_current_admin", function(data) {
-              if (data.admin_name) {
-                  startAutoRefresh(data.admin_name);
-              } else {
-                  console.error("No admin logged in");
-              }
-          });
-      });
+        $.get(`/api/${adminname}/device_entries_logged`, function(data) {
+            if (data.device_entries_logged !== undefined) {
+                $("#devices_logged").text(data.device_entries_logged);
+            } else {
+                console.error("Error fetching device entries logged.");
+            }
+        }).fail(function(error) {
+            console.error("Failed to fetch device entries logged:", error);
+        });
+    }
+    
+    function updateActiveDevicesCount(adminname) {
+        $.get(`/api/${adminname}/no_of_devices_active`, function(data) {
+            if (data.no_of_devices_active !== undefined) {
+                $("#active_devices").text(data.no_of_devices_active);
+            } else {
+                console.error("Error fetching active devices.");
+            }
+        }).fail(function(error) {
+            console.error("Failed to fetch active devices:", error);
+        });
+    }
+    
+    function startAutoRefresh(adminname) {
+        // Instantly update the counts on page load
+        updateDeviceEntriesCount(adminname);
+        updateActiveDevicesCount(adminname);
+    
+        // Continue to update the counts every 5 seconds
+        setInterval(function() {
+            updateDeviceEntriesCount(adminname);
+            updateActiveDevicesCount(adminname);
+        }, 5000); // Refresh every 5 seconds
+    }
+    
+    // Fetch current admin name and start auto-refresh
+    $(document).ready(function() {
+        $.get("/api/get_current_admin", function(data) {
+            if (data.admin_name) {
+                startAutoRefresh(data.admin_name);
+            } else {
+                console.error("No admin logged in");
+            }
+        }).fail(function(error) {
+            console.error("Failed to get current admin:", error);
+        });
+    });
+    
   </script>
   
   
@@ -221,44 +241,47 @@ function toggleSubmenu(submenuId) {
       <div id="google-chart-container">
 
 
-  <!--For test data simulation-->
-  <button id="stop-simulation" class="styled-button1">Stop</button>
 
-  <button id="start-simulation" class="styled-button2">Start Simulation</button>
-  
-  <script>
-    $(document).ready(function() {
-        $('#start-simulation').on('click', function() {
-            $.ajax({
-                url: '/start_simulation',
-                method: 'POST',
-                success: function(response) {
-                    alert(response.message);
-                },
-                error: function(error) {
-                    alert('Error starting simulation: ' + error.responseJSON.message);
+        <h2 id="chartTitle" contenteditable="true">Fuel Consumption Line Chart</h2>
+
+
+        <script>
+            let adminIdentifier = ""; // Variable to store the logged-in admin's name
+          
+            // Function to fetch the current admin name from the server
+            async function fetchCurrentAdmin() {
+              try {
+                const response = await fetch('/api/get_current_admin');
+                if (response.ok) {
+                  const data = await response.json();
+                  adminIdentifier = data.admin_name; // Store the admin name
+                  loadSavedTitle(); // Load the saved title after fetching admin name
+                } else {
+                  console.error('Failed to fetch admin name:', response.status);
                 }
-            });
-        });
-
-        $('#stop-simulation').on('click', function() {
-            $.ajax({
-                url: '/stop_simulation',
-                method: 'POST',
-                success: function(response) {
-                    alert(response.message);
-                },
-                error: function(error) {
-                    alert('Error stopping simulation: ' + error.responseJSON.message);
-                }
-            });
-        });
-    });
-</script>
-
-
-
-<h2>Fuel Consumption Line Chart</h2>
+              } catch (error) {
+                console.error('Error fetching admin name:', error);
+              }
+            }
+          
+            // Load the saved title from local storage when the page loads
+            function loadSavedTitle() {
+              let savedTitle = localStorage.getItem(`chartTitle_${adminIdentifier}`);
+              if (savedTitle) {
+                document.getElementById("chartTitle").innerText = savedTitle;
+              }
+            }
+          
+            // Save the title to local storage
+            function saveTitle() {
+              let newTitle = document.getElementById("chartTitle").innerText;
+              localStorage.setItem(`chartTitle_${adminIdentifier}`, newTitle);
+              alert("Title saved!");
+            }
+          
+            // Fetch the current admin on page load
+            window.onload = fetchCurrentAdmin;
+          </script>
 
 <br>
 <input type="date" id="startDatePicker" title="Select Start Date">
@@ -281,44 +304,77 @@ function toggleSubmenu(submenuId) {
 <!--Hard coded chart -->
 <div id="plotly-chart" style="width: 100%; height: 400px;"></div>
 <div id="noDataMessage" class="no-data-message" style="display: none;">No data available for the selected range.</div>
-
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <script>
-    // Global variables for parsed data
-    let jsonDataParsed = null; // Store parsed data for filtering and sorting
+    let jsonDataParsed = null; // Global variable for parsed data
     let selectedDate = ''; // Track the selected date for sorting
 
-    // Function to fetch data from the Flask API
+    // Function to fetch data from Flask API
     async function fetchChartData() {
-        // Fetch admin_name dynamically from session via an endpoint
-        const response = await fetch('/api/get_current_admin');
-        const { admin_name } = await response.json();
-
-        if (!admin_name) {
-            document.getElementById('noDataMessage').style.display = 'block';
-            return null;
-        }
-
-        // Fetch sensor data for the logged-in admin from the dynamic table
-        const dataResponse = await fetch(`/api/admin/${admin_name}/sensor_data`);
-        const data = await dataResponse.json();
-
-        if (!data || data.length === 0) {
-            document.getElementById('noDataMessage').style.display = 'block';
-            return null;
-        }
-
-        document.getElementById('noDataMessage').style.display = 'none';
-
-        // Extract dates and volume_liters from the API response
-        const dates = data.map(item => item.date);
-        const volumeLiters = data.map(item => item.volume_liters);
-        
-        // Parse the data into a usable format for filtering and sorting
-        jsonDataParsed = { labels: dates, volumeLiters: volumeLiters };
-
-        return jsonDataParsed;
-    }
+      try {
+          // Fetch admin details from session
+          const response = await fetch('/api/get_current_admin');
+          let data = await response.json();
+  
+          let dataResponse;
+  
+          if (response.ok && data.admin_name) {
+              const admin_name = data.admin_name;
+              console.log(`Admin logged in: ${admin_name}`);
+              dataResponse = await fetch(`/api/admin/${admin_name}/sensor_data`);
+          } else {
+              // If no admin is logged in, check for user session
+              const userResponse = await fetch('/api/get_current_user');
+              const userData = await userResponse.json();
+              
+              if (userResponse.ok && userData.user_name) {
+                  const user_name = userData.user_name;
+                  console.log(`User logged in: ${user_name}`);
+                  dataResponse = await fetch(`/api/user/${user_name}/sensor_data`);
+              } else {
+                  // No user or admin is logged in
+                  console.log("No user or admin logged in.");
+                  document.getElementById('noDataMessage').style.display = 'block';
+                  return null;
+              }
+          }
+  
+          // Parse the sensor data response
+          const sensorData = await dataResponse.json();
+          console.log(`Fetched sensor data:`, sensorData);  // Check the structure of the response here
+  
+          // Handle cases where the API returns an error message
+          if (sensorData.message) {
+              console.error(`Error fetching data: ${sensorData.message}`);
+              document.getElementById('noDataMessage').style.display = 'block';
+              return null;
+          }
+  
+          // Ensure sensorData is an array before mapping
+          if (!Array.isArray(sensorData)) {
+              console.error("Sensor data is not in array format:", sensorData);
+              document.getElementById('noDataMessage').style.display = 'block';
+              return null;
+          }
+  
+          // Extract dates and volume_liters from the API response
+          const dates = sensorData.map(item => item.date);
+          const volumeLiters = sensorData.map(item => item.volume_liters);
+  
+          // Parse the data into a usable format for filtering and sorting
+          jsonDataParsed = { labels: dates, volumeLiters: volumeLiters };
+  
+          // Draw the chart with fetched data
+          drawChart(jsonDataParsed.labels, jsonDataParsed.volumeLiters);
+  
+          return jsonDataParsed;
+      } catch (error) {
+          console.error("Error fetching chart data:", error);
+          document.getElementById('noDataMessage').style.display = 'block';
+      }
+  }
+  
+  
 
     // Function to draw the chart
     function drawChart(dates, volumeLiters) {
@@ -338,6 +394,8 @@ function toggleSubmenu(submenuId) {
 
         Plotly.newPlot('plotly-chart', [chartData], layout);
     }
+  
+  
 
     // Function to filter data by date range
     function filterByDateRange(startDate, endDate) {
@@ -551,390 +609,7 @@ function toggleSubmenu(submenuId) {
         }
     });
 </script>
-
-
-
-
-
-
-
-<!--Actual code that wont work -->
-
-
-<!-- Loading message
-<div id="loadingMessage" class="loading-message">Loading...</div>
-    <div id="plotly-chart" style="width: 100%; height: 400px;"></div>
-   
-    <div id="noDataMessage" class="no-data-message">No data available for the selected range.</div>
-    
-    <script>
-       let zoomLevel = 10; // Initial zoom level
-    let jsonDataParsed = null; // Store parsed JSON data
-
-    function drawChart(data, layout) {
-      $('#loadingMessage').hide(); // Hide loading message
-      Plotly.newPlot('plotly-chart', data, layout);
-    }
-
-    function fetchDataAndDrawChart() {
-      $('#loadingMessage').show(); // Show loading message
-  
-      $.ajax({
-        url: "/api/sensor_data",
-        dataType: "json",
-        success: function(response) {
-          jsonDataParsed = response;
-
-          var data = [{
-            x: jsonDataParsed.labels.slice(-zoomLevel),
-            y: jsonDataParsed.volumeLiters.slice(-zoomLevel),
-            type: 'scatter',
-            mode: 'lines+markers',
-            name: 'Liters'
-          }];
-
-          var layout = {
-            title: 'Fuel Consumption',
-            xaxis: {
-              title: 'Time'
-            },
-            yaxis: {
-              title: 'Liters'
-            }
-          };
-
-          drawChart(data, layout);
-        },
-        error: function() {
-          $('#noDataMessage').show();
-          $('#loadingMessage').hide(); // Hide loading message if error
-        }
-      });
-    }
-
-    function filterByDateRange(startDate, endDate) {
-      if (!jsonDataParsed) return;
-
-      var filteredData = {
-        labels: [],
-        volumeLiters: []
-      };
-
-      for (var i = 0; i < jsonDataParsed.labels.length; i++) {
-        var currentDate = jsonDataParsed.labels[i].split(" ")[0].split('/').reverse().join('-');
-        if (currentDate >= startDate && currentDate <= endDate) {
-          filteredData.labels.push(jsonDataParsed.labels[i]);
-          filteredData.volumeLiters.push(jsonDataParsed.volumeLiters[i]);
-        }
-      }
-
-      if (filteredData.labels.length === 0) {
-        $('#noDataMessage').show();
-      } else {
-        $('#noDataMessage').hide();
-        var data = [{
-          x: filteredData.labels,
-          y: filteredData.volumeLiters,
-          type: 'scatter',
-          mode: 'lines+markers',
-          name: 'Liters'
-        }];
-
-        var layout = {
-          title: 'Fuel Consumption',
-          xaxis: {
-            title: 'Time'
-          },
-          yaxis: {
-            title: 'Liters'
-          }
-        };
-
-        drawChart(data, layout);
-
-        if (startDate === endDate) {
-          $('#startTimePicker').prop('disabled', false);
-          $('#endTimePicker').prop('disabled', false);
-          $('#filterByTimeRangeBtn').prop('disabled', false);
-          $('#sortByHourBtn').show();
-          $('#sortByMinuteBtn').show();
-        } else {
-          $('#startTimePicker').prop('disabled', true);
-          $('#endTimePicker').prop('disabled', true);
-          $('#filterByTimeRangeBtn').prop('disabled', true);
-          $('#sortByHourBtn').hide();
-          $('#sortByMinuteBtn').hide();
-        }
-      }
-    }
-
-    function filterByTimeRange(startDate, startTime, endDate, endTime) {
-      if (!jsonDataParsed) return;
-
-      var filteredData = {
-        labels: [],
-        volumeLiters: []
-      };
-
-      var startDateTimeStr = `${startDate.split('-').reverse().join('/')} ${startTime}`;
-      var endDateTimeStr = `${endDate.split('-').reverse().join('/')} ${endTime}`;
-
-      for (var i = 0; i < jsonDataParsed.labels.length; i++) {
-        var dateTimeStr = jsonDataParsed.labels[i]; // Assuming format is "dd/mm/yyyy hh:mm:ss"
-        if (dateTimeStr >= startDateTimeStr && dateTimeStr <= endDateTimeStr) {
-          filteredData.labels.push(jsonDataParsed.labels[i]);
-          filteredData.volumeLiters.push(jsonDataParsed.volumeLiters[i]);
-        }
-      }
-
-      if (filteredData.labels.length === 0) {
-        $('#noDataMessage').show();
-      } else {
-        $('#noDataMessage').hide();
-        var data = [{
-          x: filteredData.labels,
-          y: filteredData.volumeLiters,
-          type: 'scatter',
-          mode: 'lines+markers',
-          name: 'Liters'
-        }];
-
-        var layout = {
-          title: 'Fuel Consumption',
-          xaxis: {
-            title: 'Time'
-          },
-          yaxis: {
-            title: 'Liters'
-          }
-        };
-
-        drawChart(data, layout);
-      }
-    }
-
-    function sortByHour(date) {
-      if (!jsonDataParsed) return;
-
-      var filteredData = {
-        labels: [],
-        volumeLiters: []
-      };
-
-      for (var i = 0; i < jsonDataParsed.labels.length; i++) {
-        var dateTimeStr = jsonDataParsed.labels[i];
-        var currentDate = dateTimeStr.split(" ")[0].split('/').reverse().join('-');
-        if (currentDate === date) {
-          filteredData.labels.push(jsonDataParsed.labels[i]);
-          filteredData.volumeLiters.push(jsonDataParsed.volumeLiters[i]);
-        }
-      }
-
-      var hourlyData = {};
-      for (var i = 0; i < filteredData.labels.length; i++) {
-        var hour = filteredData.labels[i].split(" ")[1].split(":")[0];
-        if (!hourlyData[hour]) {
-          hourlyData[hour] = [];
-        }
-        hourlyData[hour].push(filteredData.volumeLiters[i]);
-      }
-
-      var sortedData = {
-        labels: [],
-        volumeLiters: []
-      };
-
-      for (var hour in hourlyData) {
-        var avgVolume = hourlyData[hour].reduce((a, b) => a + b, 0) / hourlyData[hour].length;
-        sortedData.labels.push(`${date.split('-').reverse().join('/')} ${hour}:00:00`);
-        sortedData.volumeLiters.push(avgVolume);
-      }
-
-      if (sortedData.labels.length === 0) {
-        $('#noDataMessage').show();
-      } else {
-        $('#noDataMessage').hide();
-        var data = [{
-          x: sortedData.labels,
-          y: sortedData.volumeLiters,
-          type: 'scatter',
-          mode: 'lines+markers',
-          name: 'Liters'
-        }];
-
-        var layout = {
-          title: 'Fuel Consumption',
-          xaxis: {
-            title: 'Time'
-          },
-          yaxis: {
-            title: 'Liters'
-          }
-        };
-
-        drawChart(data, layout);
-      }
-    }
-
-    function sortByMinute(date) {
-      if (!jsonDataParsed) return;
-
-      var filteredData = {
-        labels: [],
-        volumeLiters: []
-      };
-
-      for (var i = 0; i < jsonDataParsed.labels.length; i++) {
-        var dateTimeStr = jsonDataParsed.labels[i];
-        var currentDate = dateTimeStr.split(" ")[0].split('/').reverse().join('-');
-        if (currentDate === date) {
-          filteredData.labels.push(jsonDataParsed.labels[i]);
-          filteredData.volumeLiters.push(jsonDataParsed.volumeLiters[i]);
-        }
-      }
-
-      var minuteData = {};
-      for (var i = 0; i < filteredData.labels.length; i++) {
-        var time = filteredData.labels[i].split(" ")[1];
-        var hourMinute = time.split(":").slice(0, 2).join(":");
-        if (!minuteData[hourMinute]) {
-          minuteData[hourMinute] = [];
-        }
-        minuteData[hourMinute].push(filteredData.volumeLiters[i]);
-      }
-
-      var sortedData = {
-        labels: [],
-        volumeLiters: []
-      };
-
-      for (var hourMinute in minuteData) {
-        var avgVolume = minuteData[hourMinute].reduce((a, b) => a + b, 0) / minuteData[hourMinute].length;
-        sortedData.labels.push(`${date.split('-').reverse().join('/')} ${hourMinute}:00`);
-        sortedData.volumeLiters.push(avgVolume);
-      }
-
-      if (sortedData.labels.length === 0) {
-        $('#noDataMessage').show();
-      } else {
-        $('#noDataMessage').hide();
-        var data = [{
-          x: sortedData.labels,
-          y: sortedData.volumeLiters,
-          type: 'scatter',
-          mode: 'lines+markers',
-          name: 'Liters'
-        }];
-
-        var layout = {
-          title: 'Fuel Consumption',
-          xaxis: {
-            title: 'Time'
-          },
-          yaxis: {
-            title: 'Liters'
-          }
-        };
-
-        drawChart(data, layout);
-      }
-    }
-
-    $(document).ready(function() {
-      $('#loadingMessage').show(); // Show loading message initially
-      fetchDataAndDrawChart();
-
-      // Zoom in function
-      $('#zoomInBtn').click(function() {
-        if (zoomLevel > 1) {
-          zoomLevel--;
-          fetchDataAndDrawChart();
-        }
-      });
-
-      // Zoom out function
-      $('#zoomOutBtn').click(function() {
-        if (jsonDataParsed && zoomLevel < jsonDataParsed.labels.length) {
-          zoomLevel++;
-          fetchDataAndDrawChart();
-        }
-      });
-
-      // Function to update the current date and time
-      function updateDateTime() {
-        var now = new Date();
-        var day = String(now.getDate()).padStart(2, '0');
-        var month = String(now.getMonth() + 1).padStart(2, '0'); // Months are zero-based
-        var year = now.getFullYear();
-        var hours = String(now.getHours()).padStart(2, '0');
-        var minutes = String(now.getMinutes()).padStart(2, '0');
-        var seconds = String(now.getSeconds()).padStart(2, '0');
-        var currentDateTime = `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
-
-        // Update the div with the current date and time
-        $('#currentDateTime').text('Current Date and Time: ' + currentDateTime);
-      }
-
-      // Update the time initially and then every second
-      updateDateTime();
-      setInterval(updateDateTime, 1000);
-
-      // Filter by date range logic
-      $('#filterByDateRangeBtn').on('click', function() {
-        var startDate = $('#startDatePicker').val();
-        var endDate = $('#endDatePicker').val();
-
-        if (startDate && endDate) {
-          filterByDateRange(startDate, endDate);
-        } else {
-          alert("Please select a valid date range.");
-        }
-      });
-
-      // Filter by time range logic
-      $('#filterByTimeRangeBtn').on('click', function() {
-        var startDate = $('#startDatePicker').val();
-        var startTime = $('#startTimePicker').val();
-        var endDate = $('#endDatePicker').val();
-        var endTime = $('#endTimePicker').val();
-
-        if (startTime && endTime) {
-          filterByTimeRange(startDate, startTime, endDate, endTime);
-        } else {
-          alert("Please select a valid time range.");
-        }
-      });
-
-      // Sort by hour logic
-      $('#sortByHourBtn').on('click', function() {
-        var startDate = $('#startDatePicker').val();
-        sortByHour(startDate);
-      });
-
-      // Sort by minute logic
-      $('#sortByMinuteBtn').on('click', function() {
-        var startDate = $('#startDatePicker').val();
-        sortByMinute(startDate);
-      });
-
-        $('#goToLatestBtn').on('click', function() {
-            // Redraw with only the latest 10 entries
-            var latestData = new google.visualization.DataTable();
-            latestData.addColumn('string', 'Time');
-            latestData.addColumn('number', 'Liters');
-
-            for (var i = startIndex; i < jsonDataParsed.labels.length; i++) {
-                latestData.addRow([jsonDataParsed.labels[i], jsonDataParsed.volumeLiters[i]]);
-            }
-
-            chart.draw(latestData, options);
-        });
-    } );
-</script>-->
-
-      
-        
-        
+       
   <br>
       <br>
       <h2>Sensor Data Receiver</h2>
@@ -977,6 +652,10 @@ function toggleSubmenu(submenuId) {
             {% for data_point in sense_data %}
             <tr>
               <td>{{ data_point.id }}</td>
+              <td>
+                <div class="date">{{ data_point.date.strftime('%Y-%m-%d') }}</div>
+                <div class="time">{{ data_point.date.strftime('%H:%M:%S') }}</div>
+            </td>
               <td>{{ data_point.date }}</td>
               <td>{{ data_point.full_addr }}</td>
               <td>{{ data_point.sensor_data }}</td>
@@ -986,6 +665,9 @@ function toggleSubmenu(submenuId) {
               <td><a href="{{ url_for('generate_pdf', id=data_point.id) }}" class="btn btn-primary">Download PDF</a></td>
             </tr>
             {% endfor %}
+            <tr>
+              
+          </tr>
           </tbody>
         </table>
       
@@ -1032,13 +714,22 @@ function toggleSubmenu(submenuId) {
 <script>
   const adminname = "{{ adminname }}";  // Use Flask template variable
   fetch(`/api/admin/${adminname}/dashboard`)
-    .then(response => response.json())
-    .then(data => {
-      // Update cards and charts with the data
-      updateCards(data);
-      updateCharts(data);
-    })
-    .catch(error => console.error('Error fetching dashboard data:', error));
+  .then(response => {
+    if (!response.ok) {
+      if (response.status === 401) {
+        console.error('Unauthorized access. Redirecting to login.');
+        // Redirect to login page or show an unauthorized message
+        window.location.href = '/login';
+      }
+      throw new Error('Network response was not ok');
+    }
+    return response.json();
+  })
+  .then(data => {
+    updateCards(data);
+    updateCharts(data);
+  })
+  .catch(error => console.error('Error fetching dashboard data:', error));
 
   function updateCards(data) {
     // Your code to update cards
@@ -1183,8 +874,7 @@ function toggleSubmenu(submenuId) {
                           </table>
                       </div>
                   </div>
-  
-                  <!-- JavaScript functions for handling user accounts -->
+  <!-- JavaScript functions for handling user accounts -->
                   <script>
                       function loadUserAccounts() {
                           fetch('/api/user_accounts')
@@ -1240,29 +930,34 @@ function toggleSubmenu(submenuId) {
                           .catch(error => console.error('Error updating account status:', error));
                       }
                       
+                      
+                    
+                    
+                
                       function updateUserAccountRole(accountId, isAdmin) {
-                          fetch(`/api/user_accounts/${accountId}/role`, {
-                              method: 'POST',
-                              headers: {
-                                  'Content-Type': 'application/json',
-                              },
-                              body: JSON.stringify({ is_admin: isAdmin }),
-                          })
-                          .then(response => {
-                              if (!response.ok) {
-                                  return response.text().then(text => {
-                                      console.error('Error response from server:', text);
-                                      throw new Error('Network response was not ok');
-                                  });
-                              }
-                              return response.json();
-                          })
-                          .then(data => {
-                              loadUserAccounts(); // Reload user accounts list to reflect the changes
-                              updateCounts(); // Update counts after role change
-                          })
-                          .catch(error => console.error('Error updating account role:', error));
-                      }
+                        return fetch(`/api/user_accounts/${accountId}/role`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ role: isAdmin ? 'admin' : 'user' }), // Send the correct role
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            console.log(data); // Log the response for debugging
+                            // Remove the alert message
+                            // if (data.message) {
+                            //     alert(data.message); // Alert the user with a message from the server
+                            // }
+                            loadUserAccounts(); // Reload user accounts list
+                            updateCounts(); // Update counts after role change
+                        })
+                        .catch(error => console.error('Error updating account role:', error));
+                    }
+                    
+                    
+                    
+                    
   
                       function updateCounts() {
                           fetch('/api/account_counts')
